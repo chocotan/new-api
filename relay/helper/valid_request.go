@@ -23,6 +23,13 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 	relayMode := relayconstant.Path2RelayMode(c.Request.URL.Path)
 
 	switch format {
+	case types.RelayFormatSystemOne:
+		var systemOneRequest dto.SystemOneRequest
+		err = common.UnmarshalBodyReusable(c, &systemOneRequest)
+		if err == nil {
+			err = systemOneRequest.Validate()
+		}
+		request = &systemOneRequest
 	case types.RelayFormatOpenAI:
 		request, err = GetAndValidateTextRequest(c, relayMode)
 	case types.RelayFormatGemini:

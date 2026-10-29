@@ -333,6 +333,7 @@ func TestPluginStaticRouteConflictsAreExcluded(t *testing.T) {
 		{name: "parameter intersection", staticPath: "/core/:id", pluginPath: "/core/fixed"},
 		{name: "trailing slash redirect shadow", staticPath: "/fixed", pluginPath: "/fixed/"},
 		{name: "catchall redirect shadow", staticPath: "/files/*filepath", pluginPath: "/files"},
+		{name: "different method remains rejected", staticPath: "/v1/systemone", pluginPath: "/v1/systemone"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -359,6 +360,28 @@ func TestPluginStaticRouteConflictsAreExcluded(t *testing.T) {
 			assert.Contains(t, registry.RoutingErrors()["static-conflict"], "intersects static route")
 		})
 	}
+}
+
+func TestSystemOneHostRouteKeepsTypeSafePluginPrefix(t *testing.T) {
+	outer := newOuterPluginTestEngine()
+	outer.POST("/v1/systemone", func(c *gin.Context) { c.String(http.StatusOK, "host") })
+	registry := jsplugin.NewRegistry()
+	plugin := compileRouterPlugin(t, "typesafe", "1.0.0", `[
+		{method: "POST", path: "/v1/systemone", type: "submit"},
+		{method: "POST", path: "/typesafe/v1/systemone", type: "submit"}
+	]`)
+	require.NoError(t, registry.ReplaceOverrides([]*jsplugin.LoadedPlugin{plugin}))
+	builder := newPluginGenerationBuilder(outer.Routes(), nil, testPluginRouteHandlers(
+		func(c *gin.Context, _ *jsplugin.RoutingGeneration, _ jsplugin.RouteBinding) {
+			c.String(http.StatusOK, "typesafe")
+		},
+	))
+	require.NoError(t, registry.SetGenerationPreparer(builder.prepare))
+	outer.NoRoute((&pluginRouteDispatcher{registry: registry}).dispatch)
+
+	assert.Equal(t, "host", performPluginRequest(outer, http.MethodPost, "/v1/systemone").Body.String())
+	assert.Equal(t, "typesafe", performPluginRequest(outer, http.MethodPost, "/typesafe/v1/systemone").Body.String())
+	assert.Empty(t, registry.RoutingErrors())
 }
 
 func TestStaticConflictingUpdateRetainsIncumbentAndPublishesHealthyPeer(t *testing.T) {
